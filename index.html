@@ -2208,7 +2208,7 @@ function build3DScene(flags){
   flowArrows = [];
   if((flags.ducts || flags.flow) && simResult && simResult.channels && simResult.channels.length>0){
     const chHex=[0x2196f3,0x4caf50,0xff9800,0x9c27b0,0x00bcd4,0xe91e63];
-    const zBase=box.H*0.34;
+    const zBase=box.H*0.5;  // 气流锥束锚定在箱体中线，居中水平穿过（而非偏低贴底）
     const cfg=FLOW_DENSITY[flags.density]||FLOW_DENSITY.dense;
     const shaftGeo=new THREE.CylinderGeometry(1,1,1,6);
     const headGeo =new THREE.ConeGeometry(1,1,8);
@@ -2314,7 +2314,7 @@ function build3DScene(flags){
   // ---- 停滞区（与 2D drawDuctBoundaries 一致，3D 里用橙色半透明球 + 标签）----
   if(flags.ducts && simResult && simResult.stagnantZones && simResult.stagnantZones.length){
     simResult.stagnantZones.forEach(zone=>{
-      const zm=toThreeVec(zone.x, zone.y, box.H*0.34);
+      const zm=toThreeVec(zone.x, zone.y, zBase);  // 与气流锥束同一高度基准，视觉一致
       const ball=new THREE.Mesh(new THREE.SphereGeometry(Math.max(8,box.W*0.018), 10, 8),
         new THREE.MeshBasicMaterial({color:0xff5722, transparent:true, opacity:0.35, depthWrite:false}));
       ball.position.copy(zm); threeGroup.add(ball);
@@ -4122,9 +4122,10 @@ function resetToDemo(){
 }
 
 // ---- 初始化 ----
-const APP_BUILD = '20261112a'; // 线上发布版本号（缓存可见），每次发布前自增，便于用户确认是否最新版
+const APP_BUILD = '20261112b'; // 线上发布版本号（缓存可见），每次发布前自增，便于用户确认是否最新版
 const DEFAULT_CONFIG_VERSION = '2.1'; // 内置默认配置版本号，更新 loadDemo 时递增
 function init(){
+  const _bt=document.getElementById('appBuildTag'); if(_bt) _bt.textContent='（构建 '+APP_BUILD+'）';
   const saved = localStorage.getItem('thermal-box-default');
   if(saved){
     try {
@@ -4206,6 +4207,18 @@ document.addEventListener('keydown', function(e){
 <li data-page-node-id="Ss7qSb9CKVHLugiGo0kRlB"><b data-page-node-id="u6SSJ7IY0q9OnvghTlYZgg">右侧</b> — 仿真结果面板（结果卡片、ICEPAK工况点、详表、分析）</li>
 </ul>
 <p style="margin-top:6px;color:var(--sub);font-size:12px" data-page-node-id="rmbcdCZla1KNy6NybrC4SZ">所有左侧区域标题均可点击折叠/展开。</p>
+</div>
+
+<h2 id="helpVer" data-page-node-id="verChangelog">🗒 版本与更新日志 <span id="appBuildTag" style="font-size:12px;color:var(--sub)"></span></h2>
+<div class="h-card" data-page-node-id="verCard">
+<p style="font-size:13px;line-height:1.85;margin:0 0 6px">
+本工具为单文件 HTML，版本号随发布自增，便于确认是否最新版（必要时按 <b>Ctrl+Shift+R</b> 强制刷新浏览器缓存）。
+</p>
+<ul style="font-size:13px;line-height:1.9;margin:0;padding-left:20px">
+<li><b>20261112b（本次）</b>：① 3D 气流锥束改为沿箱体中线居中水平穿过，不再偏低贴底；停滞区球与气流同高度基准。② 底部「温区」颜色映射范围可设置（默认 0~100°C），2D/3D 统一映射。③ 3D 风道由等径直管改为锥形自由射流包络（进风窄口 → 下游宽口），更贴合流体扩散表现。</li>
+<li><b>20261112a</b>：锥形气流/风道视觉优化（自由射流扩散形态）；温区范围默认与可调。</li>
+<li><b>20261111d</b>：气流箭头按局部温度着色、按流量定尺寸，多子流线立体气流束；流动动画与密度档位。</li>
+</ul>
 </div>
 
 <h2 id="helpBox" data-page-node-id="pguTgWxoxXydiD9dRQiNxS">📐 电箱参数</h2>
