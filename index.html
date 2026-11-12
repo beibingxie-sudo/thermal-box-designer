@@ -2224,11 +2224,12 @@ function build3DScene(flags){
       const hw=Math.max(8, ch.halfW||20);
       const flowStr=Math.min(flow,5000)/5000;              // 0~1 流量强度
       // 锥形气流：进风端(t=0)为窄口 r0，向下游(t=1)扩散为宽口 r1（自由射流扩散，而非等截面风道）
-      const r0=Math.max(6, hw*0.35), r1=hw;
+      const r0=Math.max(6, hw*0.30), r1=hw*1.18;   // 进风窄口 → 下游宽口，锥形对比更强
       const wp=(ch.waypoints && ch.waypoints.length>=2)
         ? ch.waypoints : [{x:ch.sx,y:ch.sy},{x:ch.ex,y:ch.ey}];
 
-      // 风道区域：沿折线逐段的半透明圆管，半径按锥形渐变（进风窄→下游宽）
+      // 风道区域：沿折线逐段的「锥形管」（进风窄→下游宽的自由射流包络）。
+      // 闭口圆柱 + 略高透明度 → 呈现为立体的气流包络体，而非俯视下的薄带。
       if(flags.ducts && wp.length>=2){
         const N=wp.length-1;
         for(let i=0;i<N;i++){
@@ -2238,13 +2239,18 @@ function build3DScene(flags){
           const d=new THREE.Vector3().subVectors(b,a);
           const L=d.length(); if(L<0.5) continue;
           d.normalize();
-          const rSa=coneRadius(tS,r0,r1)*0.85, rEb=coneRadius(tE,r0,r1)*0.85;
-          const seg=new THREE.Mesh(new THREE.CylinderGeometry(rEb, rSa, L, 12, 1, true),
-            new THREE.MeshBasicMaterial({color:chHex[ci], transparent:true, opacity:0.13, side:THREE.DoubleSide, depthWrite:false}));
+          const rSa=coneRadius(tS,r0,r1), rEb=coneRadius(tE,r0,r1);
+          const seg=new THREE.Mesh(new THREE.CylinderGeometry(rEb, rSa, L, 16, 1, false),
+            new THREE.MeshBasicMaterial({color:chHex[ci], transparent:true, opacity:0.15, side:THREE.DoubleSide, depthWrite:false}));
           seg.position.copy(a).add(b).multiplyScalar(0.5);
           seg.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), d);
           threeGroup.add(seg);
         }
+        // 气流中心轴亮线：一眼看出风道走向（沿绕行折线）
+        const axPts=wp.map(w=>toThreeVec(w.x, w.y, zBase));
+        const axGeo=new THREE.BufferGeometry().setFromPoints(axPts);
+        const axLine=new THREE.Line(axGeo, new THREE.LineBasicMaterial({color:chHex[ci], transparent:true, opacity:0.55}));
+        threeGroup.add(axLine);
       }
 
       if(flags.flow){
@@ -2272,16 +2278,19 @@ function build3DScene(flags){
             if(i%cfg.skip!==0 && i!==pts.length-1) return;   // 疏档隔点，密档不隔
             // 按锥形半径把子流线在横向(垂直流向)与竖向展开 → 进风窄、下游宽的真实气流锥束
             const r=coneRadius(p.t, r0, r1);
-            const offH=frac*r*0.6, offZ=frac*r*0.5;
-            p.x += perpX*offH; p.y += perpY*offH; p.z = zBase + offZ;
+            const offH=frac*r*0.82, offZ=frac*r*0.72;
+            p.x += perpX*offH; p.y += perpY*offH;
             if(p.x<0||p.x>box.W||p.y<0||p.y>box.D) return;
+            p.z = zBase + offZ;                                // z 沿锥形展开，形成立体锥
             const T=heatTempAt(p.x,p.y);
             const rgb=(T==null)?[33,150,243]:tempColorArr(T,tempLo,tempHi);
             const col=(rgb[0]<<16)|(rgb[1]<<8)|rgb[2];
-            const op=0.70+flowStr*0.25;
+            const op=0.82+flowStr*0.16;
             const mk=col+'_'+op.toFixed(2);
             if(!matCache.has(mk)) matCache.set(mk, new THREE.MeshBasicMaterial({color:col, transparent:true, opacity:op, depthWrite:false}));
-            const len=(10+flowStr*10)*(cfg.step<14?0.8:1), rad=(3.0+flowStr*2.0)*(cfg.step<14?0.82:1);
+            // 箭头尺寸：沿射流渐扩（进风小、下游大），更贴合自由射流
+            const taper=0.6+0.7*p.t;
+            const len=(18+flowStr*16)*taper, rad=(5.0+flowStr*3.5)*taper;
             const g=makeFlowArrow(shaftGeo, headGeo, len, rad, matCache.get(mk));
             threeGroup.add(g);
             flowArrows.push({g, pts, i0:i, n:pts.length, z:zBase});
@@ -2289,12 +2298,12 @@ function build3DScene(flags){
             setFlowArrowTransform(flowArrows[flowArrows.length-1], 0);
           });
         }
-        // 风道流量标签：挂在折线中点上方
-        if(flags.labels){
+        // 风道流量标签：每风道仅一个，挂在中点上方并按通道序号错开高度，避免重叠
+        if(flags.labels && flow>=2){
           const mid=pointOnPolyline(wp, 0.5);
           const flowCFM=(flow/CFM).toFixed(1);
-          const sp=makeLabelSprite(flowCFM+' CFM', {color:'#fff', stroke:'rgba(0,0,0,0.6)', bg:'rgba(21,101,192,0.55)', worldH: Math.max(18, Math.min(30, hw*0.9))});
-          sp.position.copy(toThreeVec(mid.x, mid.y, zBase+hw*1.6));
+          const sp=makeLabelSprite(flowCFM+' CFM', {color:'#fff', stroke:'rgba(0,0,0,0.6)', bg:'rgba(21,101,192,0.6)', worldH: Math.max(16, Math.min(26, hw*0.8))});
+          sp.position.copy(toThreeVec(mid.x, mid.y, zBase + hw*1.4 + (idx%3)*hw*0.5));
           threeGroup.add(sp);
         }
       }
@@ -4113,7 +4122,7 @@ function resetToDemo(){
 }
 
 // ---- 初始化 ----
-const APP_BUILD = '20261111d'; // 线上发布版本号（缓存可见），每次发布前自增，便于用户确认是否最新版
+const APP_BUILD = '20261112a'; // 线上发布版本号（缓存可见），每次发布前自增，便于用户确认是否最新版
 const DEFAULT_CONFIG_VERSION = '2.1'; // 内置默认配置版本号，更新 loadDemo 时递增
 function init(){
   const saved = localStorage.getItem('thermal-box-default');
