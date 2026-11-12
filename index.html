@@ -131,7 +131,7 @@ canvas{border:1px solid var(--bd);background:#fafafa;display:block;cursor:crossh
 <body data-page-node-id="28moStP6UtpIBVm0z4Dczl">
 <div class="header" data-page-node-id="pv63YQvqeMdKNXDirgUKbA">
   <h1 data-page-node-id="NFbyeirmAyTHpGn8UpacVS">📦 电箱热仿真 · 布局设计工具</h1>
-  <span class="ver" id="topVerTag" data-page-node-id="R5qQxGoF2jYEMBULzEwPIF">v2.0 · 20261112b</span>
+  <span class="ver" id="topVerTag" data-page-node-id="R5qQxGoF2jYEMBULzEwPIF">v2.0 · 20261112c</span>
   <div class="header-actions" data-page-node-id="1Z7cg2rkERZINIzBnmyBgK">
     <button onclick="saveDefaultConfig()" data-page-node-id="rSyF96SPOHy7rLcUu1H82G">⭐ 存为默认</button>
     <button onclick="resetToDemo()" data-page-node-id="dOKO7ftXYBQqU0DWR15TOk">🔄 恢复示例</button>
@@ -2209,6 +2209,8 @@ function build3DScene(flags){
   if((flags.ducts || flags.flow) && simResult && simResult.channels && simResult.channels.length>0){
     const chHex=[0x2196f3,0x4caf50,0xff9800,0x9c27b0,0x00bcd4,0xe91e63];
     const zBase=box.H*0.5;  // 气流锥束锚定在箱体中线，居中水平穿过（而非偏低贴底）
+    // 锥形半径上限：必须被箱体尺寸约束，否则锥束会戳穿箱顶/箱壁（之前 bug：气流跑到箱体外）
+    const maxOff=Math.max(8, Math.min(box.H*0.42, box.W*0.12, box.D*0.12));
     const cfg=FLOW_DENSITY[flags.density]||FLOW_DENSITY.dense;
     const shaftGeo=new THREE.CylinderGeometry(1,1,1,6);
     const headGeo =new THREE.ConeGeometry(1,1,8);
@@ -2224,7 +2226,9 @@ function build3DScene(flags){
       const hw=Math.max(8, ch.halfW||20);
       const flowStr=Math.min(flow,5000)/5000;              // 0~1 流量强度
       // 锥形气流：进风端(t=0)为窄口 r0，向下游(t=1)扩散为宽口 r1（自由射流扩散，而非等截面风道）
-      const r0=Math.max(6, hw*0.30), r1=hw*1.18;   // 进风窄口 → 下游宽口，锥形对比更强
+      // 锥形气流：进风端(t=0)为窄口 r0，向下游(t=1)扩散为宽口 r1（自由射流扩散，而非等截面风道）
+      // r0/r1 均受 maxOff 约束：既能保持锥形对比，又绝不会戳出箱体
+      const r0=Math.max(6, Math.min(hw*0.30, maxOff*0.55)), r1=Math.min(hw*1.18, maxOff);
       const wp=(ch.waypoints && ch.waypoints.length>=2)
         ? ch.waypoints : [{x:ch.sx,y:ch.sy},{x:ch.ex,y:ch.ey}];
 
@@ -2236,11 +2240,18 @@ function build3DScene(flags){
           const tS=N>0?i/N:0, tE=N>0?(i+1)/N:1;
           const a=toThreeVec(wp[i].x, wp[i].y, zBase);
           const b=toThreeVec(wp[i+1].x, wp[i+1].y, zBase);
+          // 绕障折线可能略微探出箱壁（绕模块时），先把端点夹回箱体内部，避免风道管戳出箱体
+          a.x=Math.max(0,Math.min(box.W,a.x)); a.z=Math.max(0,Math.min(box.D,a.z));
+          b.x=Math.max(0,Math.min(box.W,b.x)); b.z=Math.max(0,Math.min(box.D,b.z));
           const d=new THREE.Vector3().subVectors(b,a);
           const L=d.length(); if(L<0.5) continue;
           d.normalize();
           const rSa=coneRadius(tS,r0,r1), rEb=coneRadius(tE,r0,r1);
-          const seg=new THREE.Mesh(new THREE.CylinderGeometry(rEb, rSa, L, 16, 1, false),
+          // 风道管半径不能超过「到箱壁距离(横向)」与「到箱顶/箱底(竖向)」，否则管身会戳出箱体
+          const mx=(a.x+b.x)/2, mz=(a.z+b.z)/2;            // THREE坐标：x=宽, z=深
+          const wallDist=Math.min(mx, box.W-mx, mz, box.D-mz);
+          const rCap=Math.max(3, Math.min(rSa, rEb, wallDist-6, box.H*0.42));
+          const seg=new THREE.Mesh(new THREE.CylinderGeometry(Math.min(rEb,rCap), Math.min(rSa,rCap), L, 16, 1, false),
             new THREE.MeshBasicMaterial({color:chHex[ci], transparent:true, opacity:0.15, side:THREE.DoubleSide, depthWrite:false}));
           seg.position.copy(a).add(b).multiplyScalar(0.5);
           seg.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), d);
@@ -2280,8 +2291,10 @@ function build3DScene(flags){
             const r=coneRadius(p.t, r0, r1);
             const offH=frac*r*0.82, offZ=frac*r*0.72;
             p.x += perpX*offH; p.y += perpY*offH;
-            if(p.x<0||p.x>box.W||p.y<0||p.y>box.D) return;
-            p.z = zBase + offZ;                                // z 沿锥形展开，形成立体锥
+            // 横向偏移若越过箱壁，夹回箱体内（而非丢弃），保证气流始终在箱内
+            p.x = Math.max(4, Math.min(box.W-4, p.x));
+            p.y = Math.max(4, Math.min(box.D-4, p.y));
+            p.z = Math.max(4, Math.min(box.H-4, zBase + offZ));   // 高度也夹在箱体范围内，不戳穿顶/底
             const T=heatTempAt(p.x,p.y);
             const rgb=(T==null)?[33,150,243]:tempColorArr(T,tempLo,tempHi);
             const col=(rgb[0]<<16)|(rgb[1]<<8)|rgb[2];
@@ -2303,7 +2316,7 @@ function build3DScene(flags){
           const mid=pointOnPolyline(wp, 0.5);
           const flowCFM=(flow/CFM).toFixed(1);
           const sp=makeLabelSprite(flowCFM+' CFM', {color:'#fff', stroke:'rgba(0,0,0,0.6)', bg:'rgba(21,101,192,0.6)', worldH: Math.max(16, Math.min(26, hw*0.8))});
-          sp.position.copy(toThreeVec(mid.x, mid.y, zBase + hw*1.4 + (idx%3)*hw*0.5));
+          sp.position.copy(toThreeVec(mid.x, mid.y, Math.min(box.H-6, zBase + hw*1.4 + (idx%3)*hw*0.5)));
           threeGroup.add(sp);
         }
       }
@@ -4122,7 +4135,7 @@ function resetToDemo(){
 }
 
 // ---- 初始化 ----
-const APP_BUILD = '20261112b'; // 线上发布版本号（缓存可见），每次发布前自增，便于用户确认是否最新版
+const APP_BUILD = '20261112c'; // 线上发布版本号（缓存可见），每次发布前自增，便于用户确认是否最新版
 const DEFAULT_CONFIG_VERSION = '2.1'; // 内置默认配置版本号，更新 loadDemo 时递增
 function init(){
   const _bt=document.getElementById('appBuildTag'); if(_bt) _bt.textContent='（构建 '+APP_BUILD+'）';
@@ -4216,7 +4229,8 @@ document.addEventListener('keydown', function(e){
 本工具为单文件 HTML，版本号随发布自增，便于确认是否最新版（必要时按 <b>Ctrl+Shift+R</b> 强制刷新浏览器缓存）。
 </p>
 <ul style="font-size:13px;line-height:1.9;margin:0;padding-left:20px">
-<li><b>20261112b（本次）</b>：① 3D 气流锥束改为沿箱体中线居中水平穿过，不再偏低贴底；停滞区球与气流同高度基准。② 底部「温区」颜色映射范围可设置（默认 0~100°C），2D/3D 统一映射。③ 3D 风道由等径直管改为锥形自由射流包络（进风窄口 → 下游宽口），更贴合流体扩散表现。</li>
+<li><b>20261112c（本次）</b>：修复 3D 气流/风道戳出箱体的问题——锥形气流半径与风道管半径现在受箱体尺寸约束（不戳穿顶/底/侧壁）；气流箭头与流量标签越界时自动夹回箱体内，绕障折线端点也夹回箱体内部。</li>
+<li><b>20261112b</b>：① 3D 气流锥束改为沿箱体中线居中水平穿过，不再偏低贴底；停滞区球与气流同高度基准。② 底部「温区」颜色映射范围可设置（默认 0~100°C），2D/3D 统一映射。③ 3D 风道由等径直管改为锥形自由射流包络（进风窄口 → 下游宽口），更贴合流体扩散表现。</li>
 <li><b>20261112a</b>：锥形气流/风道视觉优化（自由射流扩散形态）；温区范围默认与可调。</li>
 <li><b>20261111d</b>：气流箭头按局部温度着色、按流量定尺寸，多子流线立体气流束；流动动画与密度档位。</li>
 </ul>
