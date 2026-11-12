@@ -219,6 +219,9 @@ canvas{border:1px solid var(--bd);background:#fafafa;display:block;cursor:crossh
         <span data-page-node-id="CoPOxu0lUtwudVtjiaWwEJ">冷</span><div class="legend-bar" data-page-node-id="VQAVpf3xT5hnCAmFWPCsge"></div><span data-page-node-id="0KtOYIMvEdY1xcCg1PN4BO">热</span>
         <span id="legRange" style="margin-left:4px" data-page-node-id="4NfuNFSVJqw7iew3KRHxEs"></span>
       </div>
+      <span style="margin-left:10px;font-size:10px;color:var(--sub)" title="温度色标范围(℃)：颜色映射的最小/最大温度。默认 0~100，可调整以更突出温差。">
+        温区<input id="tempLo" type="number" value="0" min="-50" step="1" style="width:38px;font-size:10px;padding:1px 2px;margin:0 2px" onchange="onTempRangeChange()">~<input id="tempHi" type="number" value="100" min="-50" step="1" style="width:38px;font-size:10px;padding:1px 2px;margin:0 2px" onchange="onTempRangeChange()">℃
+      </span>
     </div>
     <div class="tooltip" id="tip" data-page-node-id="y601ShASV2XxAXGqdBs5km"></div>
   </div>
@@ -253,6 +256,8 @@ let dragItem = null;
 let dragOffset = {x:0, y:0};
 let lastPointer = {x:0, y:0}; // 3D 拖拽旋转用的上一指针位置
 let viewMode = '2d'; // '2d' | '3d'
+// 温度色标范围（℃）：颜色映射的最小/最大温度，可在底部「温区」设置，默认 0~100
+let tempLo = 0, tempHi = 100;
 
 // ---- 物理常量 ----
 const AIR = {rho:1.16, cp:1005, k:0.026, mu:1.85e-5, Pr:0.71};
@@ -1075,7 +1080,7 @@ function drawHeatmap(){
   const hm = simResult.heatmap;
   const nx=hm[0].length, ny=hm.length;
   const cw=box.W*scale/nx, ch=box.D*scale/ny;
-  const Tmin=0, Tmax=200;
+  const Tmin=tempLo, Tmax=tempHi;
 
   for(let j=0;j<ny;j++){
     for(let i=0;i<nx;i++){
@@ -1089,7 +1094,7 @@ function drawHeatmap(){
 
   // 图例
   document.getElementById('heatLegend').style.display='flex';
-  document.getElementById('legRange').textContent='0~200°C';
+  document.getElementById('legRange').textContent=tempLo+'~'+tempHi+'°C';
 }
 
 function drawFlowArrows(){
@@ -1285,7 +1290,7 @@ function drawFlowArrows(){
         let col;
         if(isSimulated && getTemp){
           const T = getTemp(wx, wy);
-          col = tempColorRGBA(T, 0, 200, opacity);
+          col = tempColorRGBA(T, tempLo, tempHi, opacity);
         } else {
           col = `rgba(33,150,243,${opacity})`;
         }
@@ -1309,7 +1314,7 @@ function drawFlowArrows(){
       const p = toCanvas(midX, midY);
       let col;
       if(isSimulated && getTemp){
-        col = tempColorRGBA(getTemp(midX, midY), 0, 200, 0.5);
+        col = tempColorRGBA(getTemp(midX, midY), tempLo, tempHi, 0.5);
       } else {
         col = 'rgba(33,150,243,0.5)';
       }
@@ -1624,7 +1629,7 @@ function draw3DCanvas() {
       if(ny>1&&nx>1){
         let sumT=0,cnt=0; for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){sumT+=grid[j][i];cnt++;}
         const avgT=cnt>0?sumT/cnt:35;
-        const [rr,gg,bb]=tempColor(avgT,0,200);
+        const [rr,gg,bb]=tempColor(avgT,tempLo,tempHi);
         floorColor=`rgba(${rr},${gg},${bb},0.32)`; floorAlpha=0.32;
       }
     }
@@ -1650,7 +1655,7 @@ function draw3DCanvas() {
     const C=[[c.x,c.y,z0],[c.x+c.w,c.y,z0],[c.x+c.w,c.y+c.d,z0],[c.x,c.y+c.d,z0],
              [c.x,c.y,z1],[c.x+c.w,c.y,z1],[c.x+c.w,c.y+c.d,z1],[c.x,c.y+c.d,z1]];
     let clr=c.color;
-    if(simResult){ const sr=simResult.components.find(x=>x.id===c.id); if(sr){ const [rr,gg,bb]=tempColor(sr.Tcase,0,200); clr=`rgb(${rr},${gg},${bb})`; } }
+    if(simResult){ const sr=simResult.components.find(x=>x.id===c.id); if(sr){ const [rr,gg,bb]=tempColor(sr.Tcase,tempLo,tempHi); clr=`rgb(${rr},${gg},${bb})`; } }
     const faces=[{idx:[0,1,2,3]},{idx:[4,5,6,7]},{idx:[0,1,5,4]},{idx:[3,2,6,7]},{idx:[0,3,7,4]},{idx:[1,2,6,5]}]
       .map(f=>{
         const pts=f.idx.map(i=>P(C[i][0],C[i][1],C[i][2]));
@@ -1956,7 +1961,7 @@ function threeSceneSig(flags){
   }
   const sel = selectedItem ? selectedItem.type+':'+selectedItem.id : '';
   return [box.W,box.D,box.H, flags.heat?1:0, flags.flow?1:0, flags.ducts?1:0,
-          flags.grid?1:0, flags.labels?1:0, flags.density, sel, c,f,v,t,ch,hs].join('~');
+          flags.grid?1:0, flags.labels?1:0, flags.density, sel, c,f,v,t,ch,hs, tempLo, tempHi].join('~');
 }
 
 // 由 50×N 温度场生成 CanvasTexture：真实温度分布，而非平均温度纯色块
@@ -1965,7 +1970,7 @@ function makeHeatTexture(grid){
   const cv=document.createElement('canvas'); cv.width=nx; cv.height=ny;
   const c2=cv.getContext('2d');
   for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){
-    const rgb=tempColorArr(grid[j][i],0,200);
+    const rgb=tempColorArr(grid[j][i],tempLo,tempHi);
     c2.fillStyle='rgb('+rgb[0]+','+rgb[1]+','+rgb[2]+')';
     c2.fillRect(i,j,1,1);
   }
@@ -2008,7 +2013,7 @@ function samplePath(waypoints, step){
     const t=segs[si]>0.001 ? (dist-acc)/segs[si] : 0;
     const a=waypoints[si], b=waypoints[Math.min(si+1,waypoints.length-1)];
     const vx=b.x-a.x, vy=b.y-a.y, vl=Math.hypot(vx,vy)||1;
-    out.push({x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t, dx:vx/vl, dy:vy/vl});
+    out.push({x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t, dx:vx/vl, dy:vy/vl, t:k/n});
   }
   return out;
 }
@@ -2043,7 +2048,8 @@ function setFlowArrowTransform(a, phase){
     _flowTmpUp=new THREE.Vector3(_flowUP.x,_flowUP.y,_flowUP.z);
     _flowTmpDir=new THREE.Vector3(); _flowTmpPos=new THREE.Vector3();
   }
-  _flowTmpPos.set(x,a.z,y);           // 工具(x,y,z高) → Three(x,z高,y深)
+  const z0=(p0.z||0), z1=(p1.z||0);
+  _flowTmpPos.set(x, z0+(z1-z0)*f, y);   // 工具(x,y,z高) → Three(x,z高,y深)，z 沿路径插值形成锥形
   a.g.position.copy(_flowTmpPos);
   _flowTmpDir.set(dx,0,dy).normalize();
   a.g.quaternion.setFromUnitVectors(_flowTmpUp, _flowTmpDir);
@@ -2124,7 +2130,7 @@ function build3DScene(flags){
     const z0=c.z||0, hh=c.h, w=c.w, d=c.d;
     const isSel = !!(selectedItem && selectedItem.type==='comp' && selectedItem.id===c.id);
     let colHex=null;
-    if(simResult){ const sr=simResult.components.find(x=>x.id===c.id); if(sr){ const [r,g,b]=tempColorArr(sr.Tcase,0,200); colHex=(r<<16)|(g<<8)|b; } }
+    if(simResult){ const sr=simResult.components.find(x=>x.id===c.id); if(sr){ const [r,g,b]=tempColorArr(sr.Tcase,tempLo,tempHi); colHex=(r<<16)|(g<<8)|b; } }
     if(colHex==null) colHex = parseHex(c.color);
     const g=new THREE.BoxGeometry(w,hh,d);
     const mesh=new THREE.Mesh(g, new THREE.MeshStandardMaterial({color:colHex, roughness:0.55, metalness:0.15, emissive: isSel?0x3a2a00:0x000000}));
@@ -2217,18 +2223,23 @@ function build3DScene(flags){
       const ci=idx%chHex.length;
       const hw=Math.max(8, ch.halfW||20);
       const flowStr=Math.min(flow,5000)/5000;              // 0~1 流量强度
+      // 锥形气流：进风端(t=0)为窄口 r0，向下游(t=1)扩散为宽口 r1（自由射流扩散，而非等截面风道）
+      const r0=Math.max(6, hw*0.35), r1=hw;
       const wp=(ch.waypoints && ch.waypoints.length>=2)
         ? ch.waypoints : [{x:ch.sx,y:ch.sy},{x:ch.ex,y:ch.ey}];
 
-      // 风道区域：沿折线逐段的半透明圆管（贴合绕行路径）
+      // 风道区域：沿折线逐段的半透明圆管，半径按锥形渐变（进风窄→下游宽）
       if(flags.ducts && wp.length>=2){
-        for(let i=0;i<wp.length-1;i++){
+        const N=wp.length-1;
+        for(let i=0;i<N;i++){
+          const tS=N>0?i/N:0, tE=N>0?(i+1)/N:1;
           const a=toThreeVec(wp[i].x, wp[i].y, zBase);
           const b=toThreeVec(wp[i+1].x, wp[i+1].y, zBase);
           const d=new THREE.Vector3().subVectors(b,a);
           const L=d.length(); if(L<0.5) continue;
           d.normalize();
-          const seg=new THREE.Mesh(new THREE.CylinderGeometry(hw*0.85, hw*0.85, L, 10, 1, true),
+          const rSa=coneRadius(tS,r0,r1)*0.85, rEb=coneRadius(tE,r0,r1)*0.85;
+          const seg=new THREE.Mesh(new THREE.CylinderGeometry(rEb, rSa, L, 12, 1, true),
             new THREE.MeshBasicMaterial({color:chHex[ci], transparent:true, opacity:0.13, side:THREE.DoubleSide, depthWrite:false}));
           seg.position.copy(a).add(b).multiplyScalar(0.5);
           seg.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), d);
@@ -2242,15 +2253,12 @@ function build3DScene(flags){
         const nSubs=cfg.subs;
         // 档位决定基准间距，流量只做小幅微调（不能把极密档又拉疏）
         const arrowStep=cfg.step + (1-flowStr)*6;
+        // 沿中心线绕行折线（子流线共用），再按锥形半径在横向(垂直流向)与竖向展开成 3D 锥束
+        const centerWp = wp;
         for(let s=0;s<nSubs;s++){
           if(arrowCount>=MAX_ARROWS) break;
-          const t=(s-(nSubs-1)/2)/Math.max(1,(nSubs-1)/2);
-          const off=t*hw*0.62;
-          const sIn={x:ch.sx+perpX*off, y:ch.sy+perpY*off};
-          const sEx={x:ch.ex+perpX*off, y:ch.ey+perpY*off};
-          const subWp=computeDetourPath(sIn.x,sIn.y,sEx.x,sEx.y, hw*0.22, components);
-          const z=zBase + (s-(nSubs-1)/2)*hw*0.24;         // 多层高度形成立体气流束
-          let pts=samplePath(subWp, arrowStep);
+          const frac=(s-(nSubs-1)/2)/Math.max(1,(nSubs-1)/2);   // -1..1 横向分层
+          let pts=samplePath(centerWp, arrowStep);
           // 数量上限：超出预算时按 stride 抽稀
           if(pts.length>budget){
             const stride=Math.ceil(pts.length/budget), thinned=[];
@@ -2262,9 +2270,13 @@ function build3DScene(flags){
           pts.forEach((p,i)=>{
             if(arrowCount>=MAX_ARROWS) return;
             if(i%cfg.skip!==0 && i!==pts.length-1) return;   // 疏档隔点，密档不隔
+            // 按锥形半径把子流线在横向(垂直流向)与竖向展开 → 进风窄、下游宽的真实气流锥束
+            const r=coneRadius(p.t, r0, r1);
+            const offH=frac*r*0.6, offZ=frac*r*0.5;
+            p.x += perpX*offH; p.y += perpY*offH; p.z = zBase + offZ;
             if(p.x<0||p.x>box.W||p.y<0||p.y>box.D) return;
             const T=heatTempAt(p.x,p.y);
-            const rgb=(T==null)?[33,150,243]:tempColorArr(T,0,200);
+            const rgb=(T==null)?[33,150,243]:tempColorArr(T,tempLo,tempHi);
             const col=(rgb[0]<<16)|(rgb[1]<<8)|rgb[2];
             const op=0.70+flowStr*0.25;
             const mk=col+'_'+op.toFixed(2);
@@ -2272,7 +2284,7 @@ function build3DScene(flags){
             const len=(10+flowStr*10)*(cfg.step<14?0.8:1), rad=(3.0+flowStr*2.0)*(cfg.step<14?0.82:1);
             const g=makeFlowArrow(shaftGeo, headGeo, len, rad, matCache.get(mk));
             threeGroup.add(g);
-            flowArrows.push({g, pts, i0:i, n:pts.length, z});
+            flowArrows.push({g, pts, i0:i, n:pts.length, z:zBase});
             arrowCount++;
             setFlowArrowTransform(flowArrows[flowArrows.length-1], 0);
           });
@@ -2356,7 +2368,7 @@ function render3DThree(){
   // 温度色标：3D 里箭头按温度着色，需要给出图例（2D 由 drawHeatmap 负责）
   const legend=document.getElementById('heatLegend');
   if(legend) legend.style.display = (simResult && (flags.heat || flags.flow)) ? 'flex' : 'none';
-  const lr=document.getElementById('legRange'); if(lr) lr.textContent='0~200°C';
+  const lr=document.getElementById('legRange'); if(lr) lr.textContent=tempLo+'~'+tempHi+'°C';
   syncFlowAnim();       // 按当前图层/开关启停流动动画
 }
 
@@ -2462,6 +2474,18 @@ function revealSelectedCard(){
 }
 
 // 数据变化时强制重建（编辑/导入/仿真后调用）
+// 温度色标范围变更：更新全局映射范围并重画（2D 立即重画；3D 重建含温度贴图）
+function onTempRangeChange(){
+  const loEl=document.getElementById('tempLo'), hiEl=document.getElementById('tempHi');
+  let a=parseFloat(loEl&&loEl.value), b=parseFloat(hiEl&&hiEl.value);
+  if(isNaN(a)) a=0; if(isNaN(b)) b=100;
+  if(a>=b){ const t=a; a=b; b=t; }   // 防止 min≥max
+  tempLo=a; tempHi=b;
+  if(loEl) loEl.value=a; if(hiEl) hiEl.value=b;
+  redrawCanvas();                     // 2D 热力图/箭头按新范围着色
+  if(viewMode==='3d' && threeReady) invalidate3DScene();  // 3D 温度贴图与箭头颜色重建
+}
+
 function invalidate3DScene(){ _threeSig = ''; }
 
 // 3D 渲染分发：WebGL 可用走 Three.js，否则回退 Canvas-2D
@@ -2499,6 +2523,12 @@ function tempColorArr(T, lo, hi){
   const css = tempColor(T, lo, hi);
   const m = css.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
   return m ? [+m[1], +m[2], +m[3]] : [136,14,79];
+}
+
+// 气流锥形半径：自由射流从进风端(t=0)窄口喷出，向下游(t=1)扩散为宽口
+function coneRadius(t, r0, r1){
+  const e = t*t*(3-2*t); // smoothstep，避免线性突变
+  return r0 + (r1-r0)*e;
 }
 
 // ---- 鼠标交互 ----
@@ -4301,15 +4331,15 @@ P<sub data-page-node-id="uEBmH69skhEcG8xD5nUmA1">max</sub> = 8 + (dia/80)² × 5
 <li><b>流动动画</b>（可关闭）：箭头沿各自折线路径持续循环前进，只更新位置与朝向、不重建几何体，旋转/缩放依然流畅；导出 PDF 时会自动暂停并把箭头复位，保证报告截图稳定</li>
 <li><b>进/排风方向锥</b>：风扇盘中心有朝内（进气）/朝外（排气）的白色锥标，一眼看出气流从哪进、从哪出</li>
 <li><b>停滞区</b>：距所有风道较远的区域以橙色半透明球 + 标签标出，与 2D 视图一致</li>
-<li><b>温度色标</b>：3D 下底栏显示「冷→热 0~200°C」图例，箭头与底面温度场共用该配色</li>
+<li><b>温度色标</b>：底部「温区」可设置颜色映射范围（默认 0~100°C），2D 热力图、箭头与 3D 温度场/气流箭头共用该配色</li>
 <li data-page-node-id="qsZZkprNH98lbCgzGMCSRp">箱体以半透明「玻璃」感呈现，内部组件为不透明方块，按深度自动排序保证遮挡正确</li>
-<li data-page-node-id="YBoFY62yVtOu4oYqBhg82E">组件按壳温着色；底面为<b>真实温度场贴图</b>（50×N 网格逐格映射 0~200°C），不再是单一平均色块</li>
+<li data-page-node-id="YBoFY62yVtOu4oYqBhg82E">组件按壳温着色；底面为<b>真实温度场贴图</b>（50×N 网格逐格映射温度色标范围，默认 0~100°C，可在底部「温区」调整），不再是单一平均色块</li>
 <li>模块较多时可取消勾选「名称标签」，只保留几何体，画面更清爽</li>
 </ul>
 <h3 data-page-node-id="Y26P953DF3DptBzBiPNjn0">叠加图层（复选框，2D/3D 通用）</h3>
 <table data-page-node-id="RPeVXk4CvUqbopQjEJnTEU">
 <tr data-page-node-id="hrFJydF3Fw367OgTqSFLhp"><th data-page-node-id="WSJkXDzOZX72VIworGeUyC">图层</th><th data-page-node-id="fwYMRwbNJkbNgtjStTHVbG">说明</th></tr>
-<tr data-page-node-id="QD4hmVtYUGuVgh7owY0SXx"><td data-page-node-id="FESENaBEu7itDaQNXXXcKJ">热力图叠加</td><td data-page-node-id="ZLuP5VpFJeS1Ej7MCw8mVv">50×N 网格温度场，蓝→绿→黄→红渐变映射 0~200°C</td></tr>
+<tr data-page-node-id="QD4hmVtYUGuVgh7owY0SXx"><td data-page-node-id="FESENaBEu7itDaQNXXXcKJ">热力图叠加</td><td data-page-node-id="ZLuP5VpFJeS1Ej7MCw8mVv">50×N 网格温度场，蓝→绿→黄→红渐变映射温度色标范围（默认 0~100°C，可在底部「温区」调整）</td></tr>
 <tr data-page-node-id="tJyEgKFdsVW9jJgqLFvyWu"><td data-page-node-id="Ctni8j5Tky9NWg6cPP3bDU">气流箭头</td><td data-page-node-id="EQ7onYIVTgxKBttzy7XLmA">2D：沿折线每 16mm 一个箭头；3D：沿绕行折线的 3 条子流线布置带杆箭头，按温度着色、按流量定尺寸密度</td></tr>
 <tr data-page-node-id="uU791MuRh8bbXxRCb7AUxc"><td data-page-node-id="svPS3yzb8XfAqUPBcunbxD">风道区域</td><td data-page-node-id="rG4xZxfrtw6BR4KABTt4lh">2D：半透明彩色风道边界 + 流量标签；3D：沿折线逐段的半透明圆管，贴合绕行路径</td></tr>
 <tr data-page-node-id="4bGiINzCHlBn2ULELb50iq"><td data-page-node-id="8HfGnvQf7nxfud7DSY4Om0">网格</td><td data-page-node-id="qYgk0hGLvtsb2hVCengy1E">2D：50mm 网格 + 100mm 刻度；3D：箱体底面 50mm 网格线</td></tr>
