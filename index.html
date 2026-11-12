@@ -131,7 +131,7 @@ canvas{border:1px solid var(--bd);background:#fafafa;display:block;cursor:crossh
 <body data-page-node-id="28moStP6UtpIBVm0z4Dczl">
 <div class="header" data-page-node-id="pv63YQvqeMdKNXDirgUKbA">
   <h1 data-page-node-id="NFbyeirmAyTHpGn8UpacVS">📦 电箱热仿真 · 布局设计工具</h1>
-  <span class="ver" data-page-node-id="R5qQxGoF2jYEMBULzEwPIF">v2.0</span>
+  <span class="ver" id="topVerTag" data-page-node-id="R5qQxGoF2jYEMBULzEwPIF">v2.0 · 20261112b</span>
   <div class="header-actions" data-page-node-id="1Z7cg2rkERZINIzBnmyBgK">
     <button onclick="saveDefaultConfig()" data-page-node-id="rSyF96SPOHy7rLcUu1H82G">⭐ 存为默认</button>
     <button onclick="resetToDemo()" data-page-node-id="dOKO7ftXYBQqU0DWR15TOk">🔄 恢复示例</button>
@@ -4126,6 +4126,7 @@ const APP_BUILD = '20261112b'; // 线上发布版本号（缓存可见），每�
 const DEFAULT_CONFIG_VERSION = '2.1'; // 内置默认配置版本号，更新 loadDemo 时递增
 function init(){
   const _bt=document.getElementById('appBuildTag'); if(_bt) _bt.textContent='（构建 '+APP_BUILD+'）';
+  const _tv=document.getElementById('topVerTag'); if(_tv) _tv.textContent='v2.0 · '+APP_BUILD;
   const saved = localStorage.getItem('thermal-box-default');
   if(saved){
     try {
